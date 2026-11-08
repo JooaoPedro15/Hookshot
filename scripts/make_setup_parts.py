@@ -14,6 +14,7 @@ release lacks). Scripts the build does not use (.ps1, .bat, .js,
 import argparse
 import hashlib
 import os
+import shutil
 import sys
 import zipfile
 
@@ -42,8 +43,12 @@ def write_zip(path, root, names):
             info = zipfile.ZipInfo("HookshotBuilder/" + n, date_time=(2026, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
-            with open(os.path.join(root, n.replace("/", os.sep)), "rb") as f:
-                z.writestr(info, f.read(), compresslevel=6)
+            # (the public ZipInfo.compress_level property needs Python 3.13)
+            info._compresslevel = 6
+            source = os.path.join(root, n.replace("/", os.sep))
+            info.file_size = os.path.getsize(source)   # (choose ZIP64 before opening a large member)
+            with open(source, "rb") as f, z.open(info, "w") as member:
+                shutil.copyfileobj(f, member, 1 << 20)
     os.replace(path + ".new", path)
     h = hashlib.sha256()
     with open(path, "rb") as f:
