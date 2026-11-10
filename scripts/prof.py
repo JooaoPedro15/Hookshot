@@ -7,7 +7,7 @@ module+offset frames, leaf first. Frames in hookshot_vk.dll / hookshot.exe are n
 
 Prints the functions by inclusive share (in the stack at all) and by self share (the leaf), and the leaf modules.
 """
-import bisect, collections, itertools, os, re, sys
+import bisect, collections, itertools, os, re, stat, sys
 from contextlib import ExitStack
 from tempfile import TemporaryFile
 
@@ -40,7 +40,8 @@ def profile_lines(path, skip):
     with open(path, encoding="utf-8", errors="replace") as f, ExitStack() as files:
         start = 0
         if skip:
-            if f.seekable():
+            # Windows can report a pipe as seekable, even though it cannot be replayed.
+            if stat.S_ISREG(os.fstat(f.fileno()).st_mode) and f.seekable():
                 count = sum(1 for _ in f)
             else:
                 # A pipe can only be read once. Save its lines on disk to keep memory bounded.
