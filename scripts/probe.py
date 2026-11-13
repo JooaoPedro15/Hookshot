@@ -51,8 +51,19 @@ with open(sys.argv[1], encoding="utf-8") as capture:
         r = line.split()
         if not r:
             continue
+        if r[0] in ("U", "H", "S"):   # vk_draw.cpp's uniform/storage diagnostics, not pixel samples
+            continue
         if len(r) < 11:
             raise SystemExit(f"Probe capture line {line_number} is incomplete. Capture a new probe_*.txt file.")
+        try:
+            # The capture writes an unsigned format and four raw uint32 sample words.
+            numeric = [int(r[6])] + [int(word, 16) for word in r[7:11]]
+            if any(value < 0 or value > 0xFFFFFFFF for value in numeric):
+                raise ValueError("outside uint32 range")
+        except ValueError:
+            raise SystemExit(f"Probe capture line {line_number} has invalid numeric fields. "
+                             "Expected an unsigned 32-bit decimal format and four unsigned 32-bit hexadecimal sample words. "
+                             "Check the capture file or capture it again.") from None
         frames.setdefault(r[0], []).append(r)
 if len(frames) != 3:
     raise SystemExit(f"Probe capture expected 3 frames, found {len(frames)}. "

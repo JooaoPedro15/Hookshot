@@ -52,6 +52,48 @@ class ProbeTests(unittest.TestCase):
         self.assertIn("line 3 is incomplete", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_reports_invalid_numeric_fields_with_line_number(self):
+        cases = [(6, value) for value in ("bad", "-1", "4294967296")]
+        cases += [(column, value) for column in range(7, 11) for value in ("xyz", "-1", "100000000")]
+        for column, value in cases:
+            with self.subTest(column=column, value=value):
+                rows = [f"{frame} 0 D abcd target 1x1 109 3f800000 0 0 0\n" for frame in range(3)]
+                fields = rows[1].split()
+                fields[column] = value
+                rows[1] = " ".join(fields) + "\n"
+                rows.insert(1, "\n")
+                result = self.run_probe(rows)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("line 3 has invalid numeric fields", result.stderr)
+                self.assertIn("32-bit", result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_accepts_full_uint32_samples_and_unknown_formats(self):
+        for fmt in (0, 76, 83, 97, 100, 109, 122, 123, 999, 0xFFFFFFFF):
+            with self.subTest(fmt=fmt):
+                rows = [f"{frame} 0 D abcd target 1x1 {fmt} ffffffff ffffffff ffffffff ffffffff\n"
+                        for frame in range(3)]
+                result = self.run_probe(rows)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("\n0 entries far from both neighbours\n", result.stdout)
+
+    def test_auxiliary_capture_records_do_not_change_pixel_analysis(self):
+        rows = ["0 0 D abcd target 1x1 100 3f800000 0 0 0\n",
+                "1 0 D abcd target 1x1 100 41200000 0 0 0\n",
+                "2 0 D abcd target 1x1 100 3f800000 0 0 0\n"]
+        baseline = self.run_probe(rows)
+        self.assertEqual(baseline.returncode, 0, baseline.stderr)
+        self.assertIn("\n1 entries far from both neighbours\n", baseline.stdout)
+        # vk_draw.cpp writes these diagnostic records after the pixel samples.
+        records = ["U 1 000000000000abcd s0 c3 0x1000 +0x20 nan 1 inf 0 huge 0 zero 0 first 0x7fc00000\n",
+                   "H 1 000000000000abcd c3 3f8000007fc00000\n",
+                   "S 1 000000000000abcd s0 c3+0x20 addr 0x2000 size 0x10 read 1 nz 4 hash abcd\n"]
+        for record in records:
+            with self.subTest(record=record[0]):
+                result = self.run_probe(rows + [record])
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, baseline.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
